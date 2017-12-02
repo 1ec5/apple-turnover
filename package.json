@@ -1,0 +1,21 @@
+{
+    "name": "apple-turnover",
+    "version": "0.0.1",
+    "main": "index.js",
+    "author": "Minh Nguyen <mxn@1ec5.org> (http://www.1ec5.org/)",
+    "license": "BSD 2-Clause",
+    "keywords": [
+        "openstreetmap",
+        "osm"
+    ],
+    "homepage": "https://github.com/1ec5/apple-turnover/",
+    "bugs": "https://github.com/1ec5/apple-turnover/issues/",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/1ec5/apple-turnover.git"
+    },
+    "dependencies": {
+        "lodash": "^4.17.4",
+        "@turf/turf": "^5.0.0"
+    }
+}
