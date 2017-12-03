@@ -44,7 +44,7 @@ function flattenManeuver(maneuver) {
     console.assert(next.isConnection, "Next maneuver %o lacks isConnection property.", next.fromWay);
     
     maneuver.fromWays = maneuver.fromWays.concat(next.fromWays);
-    maneuver.line.geometry.coordinates = maneuver.line.geometry.coordinates.concat(next.line.geometry.coordinates);
+    maneuver.line = turf.lineString(turf.getCoords(maneuver.line).concat(turf.getCoords(next.line)));
     maneuver.viaNode = next.viaNode;
     maneuver.lanes = Math.max(maneuver.lanes, next.lanes);
     
@@ -107,11 +107,11 @@ fs.readFile(input, (err, data) => {
             return;
         }
         
-        way.maneuvers = [];
+        let wayManeuvers = [];
         if (!way.tags.oneway || way.tags.oneway === "yes") {
             let turns = turnTagToManeuvers(way.tags["turn:lanes:forward"] || way.tags["turn:lanes"] || way.tags["turn:forward"] || way.tags.turn);
             ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
-                way.maneuvers.push({
+                wayManeuvers.push({
                     fromWay: way.id,
                     progression: 1,
                     fromNode: _.first(way.nodes),
@@ -124,12 +124,13 @@ fs.readFile(input, (err, data) => {
             });
         }
         if (!way.tags.oneway || way.tags.oneway === "-1") {
-            let maneuverLine = way.line;
-            maneuverLine.geometry.coordinates.reverse();
+            let maneuverCoords = coords.concat();
+            maneuverCoords.reverse();
+            let maneuverLine = turf.lineString(maneuverCoords);
             
             let turns = turnTagToManeuvers(way.tags["turn:lanes:backward"] || way.tags["turn:lanes"] || way.tags["turn:backward"] || way.tags.turn);
             ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
-                way.maneuvers.push({
+                wayManeuvers.push({
                     fromWay: way.id,
                     progression: -1,
                     fromNode: _.last(way.nodes),
@@ -141,7 +142,7 @@ fs.readFile(input, (err, data) => {
                 });
             });
         }
-        maneuvers = maneuvers.concat(way.maneuvers);
+        maneuvers = maneuvers.concat(wayManeuvers);
     });
     
     maneuvers.forEach(maneuver => {
