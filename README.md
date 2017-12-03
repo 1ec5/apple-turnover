@@ -1,8 +1,8 @@
 # Apple Turnover
 
-_Half-baked OpenStreetMap turn lane analysis_
+[<img src="https://upload.wikimedia.org/wikipedia/commons/thumb/7/77/Pastry-Turnover-Apple.jpg/640px-Pastry-Turnover-Apple.jpg" width="320" alt="Half-baked OpenStreetMap turn lane analysis">](https://commons.wikimedia.org/wiki/File:Pastry-Turnover-Apple.jpg)
 
-Apple Turnover is a tool that performs basic analysis on the attributes of turn lanes in OpenStreetMap.
+Apple Turnover is a tool that performs basic analysis on the attributes of [turn lanes](https://wiki.openstreetmap.org/wiki/Key:turn) in [OpenStreetMap](https://www.openstreetmap.org/).
 
 ## Features
 
