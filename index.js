@@ -6,11 +6,6 @@ let turf = require("@turf/turf");
 let fs = require("fs");
 let process = require("process");
 
-// http://overpass-turbo.eu/s/ts1
-// 1.6% of possible implicit right turns also have lane change restrictions. Most neighbor left turn lanes, so no lane change is required.
-// --,_____,--   --,_____,--
-//   | H : |       | H<| |
-
 const maxLengthForTurnAngle = 36;
 
 function normalizeSpeed(speed) {
