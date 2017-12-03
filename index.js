@@ -46,7 +46,7 @@ function flattenManeuver(maneuver) {
     
     flattenManeuver(next);
     
-    console.assert(next.isConnection, "Next maneuver %s lacks isConnection property.", next.fromWay);
+    console.assert(next.isConnection, "Next maneuver %o lacks isConnection property.", next.fromWay);
     
     maneuver.fromWays = maneuver.fromWays.concat(next.fromWays);
     maneuver.line.geometry.coordinates = maneuver.line.geometry.coordinates.concat(next.line.geometry.coordinates);
@@ -208,7 +208,27 @@ fs.readFile(input, (err, data) => {
             return Math.abs(connectedBearing - bearing) > 30;
         });
         
-        console.assert(connectedManeuvers.length < 2, "Ambiguous maneuver from %s via one of %s", maneuver, connectedManeuvers);
+        if (connectedManeuvers.length > 1) {
+            let sameClassManeuvers = connectedManeuvers.filter(connectedManeuver => {
+                let connectedWay = waysById[connectedManeuver.fromWay];
+                return connectedWay.tags.highway === way.tags.highway;
+            });
+            if (sameClassManeuvers.length) {
+                connectedManeuvers = sameClassManeuvers;
+            }
+        }
+        
+        if (connectedManeuvers.length > 1) {
+            let sameNamedManeuvers = connectedManeuvers.filter(connectedManeuver => {
+                let connectedWay = waysById[connectedManeuver.fromWay];
+                return connectedWay.tags.name === way.tags.name;
+            });
+            if (sameNamedManeuvers.length) {
+                connectedManeuvers = sameNamedManeuvers;
+            }
+        }
+        
+        console.assert(connectedManeuvers.length < 2, "Ambiguous maneuver from %o via one of %o", maneuver, connectedManeuvers);
         
         if (connectedManeuvers.length) {
             maneuver.next = connectedManeuvers[0];
