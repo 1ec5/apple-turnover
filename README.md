@@ -17,7 +17,7 @@ With Apple Turnover, you can gather statistics about the lengths of turn lanes b
 
 1. Clone this repository and run `npm install` to install this tool’s dependencies.
 1. Using [Overpass turbo](http://overpass-turbo.eu/), query for turn lanes in a specific region in which turn lanes have been mapped. Examples:
-   * [Greater Cincinnati and Northern Kentucky](http://overpass-turbo.eu/s/tuq)
+   * [Greater Cincinnati and Northern Kentucky](http://overpass-turbo.eu/s/tvd)
    * [San Francisco Bay Area](http://overpass-turbo.eu/s/tuF)
    * [Santa Clara County, California](http://overpass-turbo.eu/s/tuD)
 1. Click the Export button. Under the Data section, choose “raw data” and save the file to disk.
