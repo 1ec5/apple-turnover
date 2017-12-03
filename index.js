@@ -8,6 +8,29 @@ let process = require("process");
 
 const maxLengthForTurnAngle = 36;
 
+function getTagsForProgression(tag, way, progression) {
+    let direction = progression > 0 ? "forward" : "backward";
+    return way.tags[`${tag}:lanes:${direction}`] || way.tags[`${tag}:lanes`] || way.tags[`${tag}:${direction}`] || way.tags[tag];
+}
+
+function getTurnTags(way, progression) {
+    return getTagsForProgression("turn", way, progression);
+}
+
+function turnTagToManeuvers(turn) {
+    return {
+        none: turn && turn.split("|").filter(lane => !lane || lane === "none").length,
+        reverse: turn && _.size(turn.match(/(?:^|\||;)reverse/g)),
+        left: turn && _.size(turn.match(/(?:^|\||;|slight_)left/g)),
+        through: turn && _.size(turn.match(/(?:^|\||;)through/g)),
+        right: turn && _.size(turn.match(/(?:^|\||;|slight_)right/g))
+    };
+}
+
+function getMaxSpeedTags(way, progression) {
+    return getTagsForProgression("maxspeed:advisory", way, progression) || getTagsForProgression("maxspeed", way, progression);
+}
+
 function normalizeSpeed(speed) {
     if (!speed) {
         return speed;
@@ -21,16 +44,6 @@ function normalizeSpeed(speed) {
     }
     // Kilometers per hour to meters per hour
     return speed * 1000;
-}
-
-function turnTagToManeuvers(turn) {
-    return {
-        none: turn && turn.split("|").filter(lane => !lane || lane === "none").length,
-        reverse: turn && _.size(turn.match(/(?:^|\||;)reverse/g)),
-        left: turn && _.size(turn.match(/(?:^|\||;|slight_)left/g)),
-        through: turn && _.size(turn.match(/(?:^|\||;)through/g)),
-        right: turn && _.size(turn.match(/(?:^|\||;|slight_)right/g))
-    };
 }
 
 function flattenManeuver(maneuver) {
@@ -109,17 +122,18 @@ fs.readFile(input, (err, data) => {
         
         let wayManeuvers = [];
         if (!way.tags.oneway || way.tags.oneway === "yes") {
-            let turns = turnTagToManeuvers(way.tags["turn:lanes:forward"] || way.tags["turn:lanes"] || way.tags["turn:forward"] || way.tags.turn);
+            let progression = 1;
+            let turns = turnTagToManeuvers(getTurnTags(way, progression));
             ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
                 wayManeuvers.push({
                     fromWay: way.id,
-                    progression: 1,
+                    progression: progression,
                     fromNode: _.first(way.nodes),
                     viaNode: _.last(way.nodes),
                     line: way.line,
                     turn: turn,
                     lanes: turns[turn],
-                    maxSpeed: normalizeSpeed(way.tags["maxspeed:lanes:forward"] || way.tags["maxspeed:lanes"] || way.tags["maxspeed:forward"] || way.tags.maxspeed)
+                    maxSpeed: normalizeSpeed(getMaxSpeedTags(way, progression))
                 });
             });
         }
@@ -128,17 +142,18 @@ fs.readFile(input, (err, data) => {
             maneuverCoords.reverse();
             let maneuverLine = turf.lineString(maneuverCoords);
             
-            let turns = turnTagToManeuvers(way.tags["turn:lanes:backward"] || way.tags["turn:lanes"] || way.tags["turn:backward"] || way.tags.turn);
+            let progression = -1;
+            let turns = turnTagToManeuvers(getTurnTags(way, progression));
             ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
                 wayManeuvers.push({
                     fromWay: way.id,
-                    progression: -1,
+                    progression: progression,
                     fromNode: _.last(way.nodes),
                     viaNode: _.first(way.nodes),
                     line: maneuverLine,
                     turn: turn,
                     lanes: turns[turn],
-                    maxSpeed: normalizeSpeed(way.tags["maxspeed:lanes:backward"] || way.tags["maxspeed:lanes"] || way.tags["maxspeed:backward"] || way.tags.maxspeed)
+                    maxSpeed: normalizeSpeed(getMaxSpeedTags(way, progression))
                 });
             });
         }
