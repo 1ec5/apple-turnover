@@ -78,7 +78,7 @@ function getTurnLanes(way, progression) {
     }
     let maneuverLine = turf.lineString(maneuverCoords);
     
-    let maxSpeed = getTagsForProgression("maxspeed:advisory", way, progression, laneCount) || getTagsForProgression("maxspeed", way, progression, laneCount);
+    let maxSpeed = getTagsForProgression("maxspeed:advisory", way, progression) || getTagsForProgression("maxspeed", way, progression);
     
     return ["reverse", "left", "right"].filter(turn => turns[turn]).map(turn => ({
         fromWay: way.id,
