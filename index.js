@@ -8,27 +8,18 @@ let process = require("process");
 
 const maxLengthForTurnAngle = 36;
 
-function getTagsForProgression(tag, way, progression) {
+function getTagsForProgression(tag, way, progression, laneCount) {
     let direction = progression > 0 ? "forward" : "backward";
-    return way.tags[`${tag}:lanes:${direction}`] || way.tags[`${tag}:lanes`] || way.tags[`${tag}:${direction}`] || way.tags[tag];
-}
-
-function getTurnTags(way, progression) {
-    return getTagsForProgression("turn", way, progression);
-}
-
-function turnTagToManeuvers(turn) {
-    return {
-        none: turn && turn.split("|").filter(lane => !lane || lane === "none").length,
-        reverse: turn && _.size(turn.match(/(?:^|\||;)reverse/g)),
-        left: turn && _.size(turn.match(/(?:^|\||;|slight_)left/g)),
-        through: turn && _.size(turn.match(/(?:^|\||;)through/g)),
-        right: turn && _.size(turn.match(/(?:^|\||;|slight_)right/g))
-    };
-}
-
-function getMaxSpeedTags(way, progression) {
-    return getTagsForProgression("maxspeed:advisory", way, progression) || getTagsForProgression("maxspeed", way, progression);
+    let tags = way.tags[`${tag}:lanes:${direction}`] || way.tags[`${tag}:lanes`];
+    if (tags) {
+        return tags;
+    }
+    
+    tags = way.tags[`${tag}:${direction}`] || way.tags[tag];
+    if (tags && laneCount) {
+        return new Array(laneCount).fill(tags).join("|");
+    }
+    return tags;
 }
 
 function normalizeSpeed(speed) {
@@ -44,6 +35,61 @@ function normalizeSpeed(speed) {
     }
     // Kilometers per hour to meters per hour
     return speed * 1000;
+}
+
+function getTurnLanes(way, progression) {
+    let direction = progression > 0 ? "forward" : "backward";
+    let laneCount = parseInt(way.tags["lanes:" + direction]);
+    if (!laneCount) {
+        laneCount = parseInt(way.tags.lanes);
+        if (way.tags.oneway !== "yes" && way.tags.oneway !== "-1") {
+            laneCount = Math.floor(laneCount / 2);
+        }
+    }
+    
+    let turnTags = getTagsForProgression("turn", way, progression, laneCount);
+    if (!turnTags) {
+        return [];
+    }
+    turnTags = turnTags.split("|").map(tag => tag.split(";"));
+    
+    let changeTags = getTagsForProgression("change", way, progression, laneCount);
+    if (changeTags) {
+        changeTags = changeTags.split("|");
+        console.assert(turnTags.length === changeTags.length, "Way %o has %s turn lanes but %s lanes in change:lanes", way, turnTags.length, changeTags.length);
+    }
+    
+    let lanes = _.zip(turnTags, changeTags).map(pair => ({
+        turn: pair[0],
+        change: pair[1]
+    }));
+    
+    let turns = {
+        none: lanes.filter(lane => !lane.turn || !lane.turn.length || lane.turn[0] === "none").length,
+        reverse: lanes.filter(lane => lane.turn.includes("reverse")).length,
+        left: lanes.filter(lane => lane.turn.includes("left") || lane.turn.includes("slight_left")).length,
+        through: lanes.filter(lane => lane.turn.includes("through")).length,
+        right: lanes.filter(lane => lane.turn.includes("right") || lane.turn.includes("slight_right")).length
+    };
+    
+    let maneuverCoords = turf.getCoords(way.line).concat();
+    if (progression < 0) {
+        maneuverCoords.reverse();
+    }
+    let maneuverLine = turf.lineString(maneuverCoords);
+    
+    let maxSpeed = getTagsForProgression("maxspeed:advisory", way, progression, laneCount) || getTagsForProgression("maxspeed", way, progression, laneCount);
+    
+    return ["reverse", "left", "right"].filter(turn => turns[turn]).map(turn => ({
+        fromWay: way.id,
+        progression: progression,
+        fromNode: (progression > 0 ? _.first : _.last)(way.nodes),
+        viaNode: (progression > 0 ? _.last : _.first)(way.nodes),
+        line: maneuverLine,
+        turn: turn,
+        lanes: turns[turn],
+        maxSpeed: normalizeSpeed(maxSpeed)
+    }));
 }
 
 function flattenManeuver(maneuver) {
@@ -122,40 +168,12 @@ fs.readFile(input, (err, data) => {
         
         let wayManeuvers = [];
         if (!way.tags.oneway || way.tags.oneway === "yes") {
-            let progression = 1;
-            let turns = turnTagToManeuvers(getTurnTags(way, progression));
-            ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
-                wayManeuvers.push({
-                    fromWay: way.id,
-                    progression: progression,
-                    fromNode: _.first(way.nodes),
-                    viaNode: _.last(way.nodes),
-                    line: way.line,
-                    turn: turn,
-                    lanes: turns[turn],
-                    maxSpeed: normalizeSpeed(getMaxSpeedTags(way, progression))
-                });
-            });
+            let turns = getTurnLanes(way, 1);
+            wayManeuvers = wayManeuvers.concat(turns);
         }
         if (!way.tags.oneway || way.tags.oneway === "-1") {
-            let maneuverCoords = coords.concat();
-            maneuverCoords.reverse();
-            let maneuverLine = turf.lineString(maneuverCoords);
-            
-            let progression = -1;
-            let turns = turnTagToManeuvers(getTurnTags(way, progression));
-            ["reverse", "left", "right"].filter(turn => turns[turn]).forEach(turn => {
-                wayManeuvers.push({
-                    fromWay: way.id,
-                    progression: progression,
-                    fromNode: _.last(way.nodes),
-                    viaNode: _.first(way.nodes),
-                    line: maneuverLine,
-                    turn: turn,
-                    lanes: turns[turn],
-                    maxSpeed: normalizeSpeed(getMaxSpeedTags(way, progression))
-                });
-            });
+            let turns = getTurnLanes(way, -1);
+            wayManeuvers = wayManeuvers.concat(turns);
         }
         maneuvers = maneuvers.concat(wayManeuvers);
     });
