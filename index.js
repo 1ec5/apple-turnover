@@ -56,7 +56,10 @@ function getTurnLanes(way, progression) {
     let changeTags = getTagsForProgression("change", way, progression, laneCount);
     if (changeTags) {
         changeTags = changeTags.split("|");
-        console.assert(turnTags.length === changeTags.length, "Way %o has %s turn lanes but %s lanes in change:lanes", way, turnTags.length, changeTags.length);
+        if (turnTags.length !== changeTags.length) {
+            console.warn("Way %s has %s turn lanes but %s lanes in change:lanes", way.id, turnTags.length, changeTags.length);
+            return;
+        }
     }
     
     let lanes = _.zip(turnTags, changeTags).map(pair => ({
