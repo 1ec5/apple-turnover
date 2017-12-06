@@ -280,9 +280,11 @@ fs.readFile(input, (err, data) => {
                 return true;
             }
             
-            if (maneuver.protected && connectedManeuver.protected === false) {
-                return true;
-            }
+            return maneuver.protected && connectedManeuver.protected === false;
+        });
+        
+        let bearingDeltas = connectedManeuvers.map(connectedManeuver => {
+            let connectedWay = waysById[connectedManeuver.fromWay];
             
             let startOffset;
             let endOffset;
@@ -302,11 +304,18 @@ fs.readFile(input, (err, data) => {
                 units: "meters"
             }));
             
-            //if (Math.abs(connectedBearing - bearing) > 20) {
-            //    console.log("Removing", maneuver.fromWay, bearing, connectedManeuver.fromWay, connectedBearing, Math.abs(connectedBearing - bearing));
+            let bearingDelta = connectedBearing - bearing;
+            if (bearingDelta > 180) {
+                bearingDelta -= 180;
+            } else if (bearingDelta < -180) {
+                bearingDelta += 180;
+            }
+            //if (Math.abs(bearingDelta) > 30) {
+            //    console.warn("Removing", maneuver.fromWay, bearing, connectedManeuver.fromWay, connectedBearing, bearingDelta);
             //}
-            return Math.abs(connectedBearing - bearing) > 30;
+            return bearingDelta;
         });
+        _.remove(connectedManeuvers, (connectedManeuver, idx) => Math.abs(bearingDeltas[idx]) > 30);
         
         if (connectedManeuvers.length > 1) {
             let sameClassManeuvers = connectedManeuvers.filter(connectedManeuver => {
@@ -328,7 +337,7 @@ fs.readFile(input, (err, data) => {
             }
         }
         
-        console.assert(connectedManeuvers.length < 2, "Ambiguous maneuver from %o via one of %o", maneuver, connectedManeuvers);
+        console.assert(connectedManeuvers.length < 2, "Ambiguous maneuver from %o via one of %o with bearing deltas %s", maneuver, connectedManeuvers, bearingDeltas);
         
         if (connectedManeuvers.length) {
             maneuver.next = connectedManeuvers[0];
