@@ -12,6 +12,7 @@ With Apple Turnover, you can gather statistics about the lengths of turn lanes b
 * Correctly handles left and right turn lanes on the same road in which the lanes’ start and end points are staggered
 * Spans maneuvers across multiple ways split due to changes in lane count, speed limit, name, etc.
 * Consolidates maneuvers that are multiple lanes wide
+* Distinguishes between segments of turn lanes that allow and disallow lane changes
 
 ## How to bake
 
@@ -36,5 +37,6 @@ The output file is a tab-delimited file. Each line represents one maneuver, such
 * `left`, `right`, or `reverse`, as indicated by lane markings or signage; combinations of maneuvers, such as `left;right`, result in separate maneuvers
 * The `highway` tag of the way at the end of the turn lane (but not the way onto which the driver turns)
 * The number of lanes that may be used for this maneuver
-* The length of the turn lane in meters
-* The explicit maximum speed limit along the turn lane in meters per second; if the speed limit varies along the turn lane, an average weighted by distance
+* The length (in meters) of the turn lane
+* The length (in meters) of the portion of the turn lane that is surrounded by lane change restrictions; left blank if the entire lane is subject to lane change restrictions
+* The explicit maximum speed limit (in meters per second) along the turn lane; if the speed limit varies along the turn lane, an average weighted by distance
