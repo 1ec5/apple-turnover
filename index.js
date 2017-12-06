@@ -177,6 +177,8 @@ function flattenManeuver(maneuver) {
     
     if (!maneuver.protected && next.protected) {
         maneuver.protectionNode = next.fromNode;
+    } else {
+        maneuver.protectionNode = next.protectionNode;
     }
     
     if (maneuver.maxSpeed && next.maxSpeed) {
