@@ -6,10 +6,27 @@ let turf = require("@turf/turf");
 let fs = require("fs");
 let process = require("process");
 
+/**
+ * {Number} Maximum length in meters of the segment of a connecting way that is
+ * included in the turn angle calculation between two maneuvers that are
+ * candidates for linking.
+ */
 const maxLengthForTurnAngle = 36;
 
+/**
+ * {Object<Object>} A table mapping OpenStreetMap way IDs to the corresponding
+ * way objects.
+ */
 let waysById;
 
+/**
+ * Returns the number of lanes in the given way going in a particular direction.
+ *
+ * @param way {Object} The way on which to count the lanes.
+ * @param progression {Number} A positive number for the forward direction or a
+ *  negative number for the backward direction.
+ * @returns {Number} The number of lanes in one direction.
+ */
 function getLaneCount(way, progression) {
     let direction = progression > 0 ? "forward" : "backward";
     let laneCount = parseInt(way.tags["lanes:" + direction]);
@@ -22,6 +39,19 @@ function getLaneCount(way, progression) {
     return laneCount || 1;
 }
 
+/**
+ * Returns the value of a tag on the given way, respecting directional variants
+ * of the tag.
+ *
+ * @param tag {String} The base tag name, not including `:lanes`, `:backward`,
+ *  or `:forward`.
+ * @param way {Object} The tagged way.
+ * @param progression {Number} A positive number for the forward direction or a
+ *  negative number for the backward direction.
+ * @param laneCount {Number} The number of lanes in the direction indicated by
+ *  `progression`.
+ * @returns {String} The tag value.
+ */
 function getTagsForProgression(tag, way, progression, laneCount) {
     let direction = progression > 0 ? "forward" : "backward";
     let tags = way.tags[`${tag}:lanes:${direction}`] || way.tags[`${tag}:lanes`];
@@ -36,6 +66,13 @@ function getTagsForProgression(tag, way, progression, laneCount) {
     return tags;
 }
 
+/**
+ * Returns the given speed expressed in meters per second.
+ *
+ * @param speed {String|Number} A speed tag value in kilometers per hour or
+ *  miles per hour.
+ * @returns {Number} The equivalent speed in meters per second.
+ */
 function normalizeSpeed(speed) {
     if (!speed) {
         return speed;
@@ -51,7 +88,31 @@ function normalizeSpeed(speed) {
     return speed * 1000;
 }
 
-function getTurnLanes(way, progression) {
+/**
+ * Returns the turn maneuvers allowed by the given way going in a single
+ * direction.
+ *
+ * A maneuver object has the following properties:
+ *
+ * - fromWay {Number} The ID of the way representing the turn lane.
+ * - progression {Number} A positive number for the forward direction or a
+ *      negative number for the backward direction.
+ * - fromNode {Number} The ID of the node representing the start of the turn
+ *      lane.
+ * - viaNode {Number} The ID of the node representing the end of the turn lane.
+ * - line {LineString} The turn lane's geometry.
+ * - turn {String} The allowed maneuver as "reverse", "left", or "right".
+ * - lanes {Number} The number of lanes that can be used for the maneuver.
+ * - protected {Boolean} True if the maneuver has at least one dedicated lane
+ *      subject to a lane change restriction.
+ * - maxSpeed {Number} The maximum speed limit in meters per second.
+ *
+ * @param way {Object} A way tagged with turn lanes.
+ * @param progression {Number} A positive number for the forward direction or a
+ *  negative number for the backward direction.
+ * @returns {Array<Object>} Turn maneuvers allowed by the way.
+ */
+function getManeuvers(way, progression) {
     let laneCount = getLaneCount(way, progression);
     let turnTags = getTagsForProgression("turn", way, progression, laneCount);
     if (!turnTags) {
@@ -149,6 +210,14 @@ function getTurnLanes(way, progression) {
     }));
 }
 
+/**
+ * Merges a maneuver with a connecting maneuver in chronological order.
+ *
+ * @param maneuver {Object} The maneuver to flatten; its `next` property must be
+ *  set to the connecting maneuver.
+ * @returns {Object} The same maneuver, flattened to incorporate the information
+ *  previously set on the `next` property (which is removed).
+ */
 function flattenManeuver(maneuver) {
     let next = maneuver.next;
     if (!next) {
@@ -235,12 +304,12 @@ fs.readFile(input, (err, data) => {
         
         let wayManeuvers = [];
         if (!way.tags.oneway || way.tags.oneway === "yes") {
-            let turns = getTurnLanes(way, 1);
-            wayManeuvers = wayManeuvers.concat(turns);
+            let forwardManeuvers = getManeuvers(way, 1);
+            wayManeuvers = wayManeuvers.concat(forwardManeuvers);
         }
         if (!way.tags.oneway || way.tags.oneway === "-1") {
-            let turns = getTurnLanes(way, -1);
-            wayManeuvers = wayManeuvers.concat(turns);
+            let backwardManeuvers = getManeuvers(way, -1);
+            wayManeuvers = wayManeuvers.concat(backwardManeuvers);
         }
         maneuvers = maneuvers.concat(wayManeuvers);
     });
