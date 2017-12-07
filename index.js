@@ -231,6 +231,13 @@ function flattenManeuver(maneuver) {
         console.warn("Maneuver disallows lane changes at way %s but allows lane changes at way %s", _.last(maneuver.fromWays), next.fromWays[0]);
     }
     
+    // If a maneuver narrows to fewer lanes before the intersection, it may mean
+    // that this tool has too aggressively linked unrelated maneuvers, or it may
+    // signal a tagging error.
+    if (maneuver.lanes > next.lanes) {
+        console.warn("Maneuver drops %s lane(s) from %s to %s", maneuver.lanes - next.lanes, _.last(maneuver.fromWays), next.fromWays[0]);
+    }
+    
     maneuver.fromWays = maneuver.fromWays.concat(next.fromWays);
     maneuver.progressions = maneuver.progressions.concat(next.progressions);
     maneuver.line = turf.lineString(turf.getCoords(maneuver.line).concat(turf.getCoords(next.line)));
