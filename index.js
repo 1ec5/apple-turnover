@@ -339,9 +339,9 @@ fs.readFile(input, (err, data) => {
         let endOffset;
         if (maneuver.progression > 0) {
             startOffset = 0;
-            endOffset = wayLength;
+            endOffset = Math.min(wayLength, maxLengthForTurnAngle);
         } else {
-            startOffset = wayLength;
+            startOffset = Math.min(wayLength, maxLengthForTurnAngle);
             endOffset = 0;
         }
         let bearing = turf.bearing(turf.along(way.line, startOffset, {
