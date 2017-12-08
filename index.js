@@ -305,7 +305,9 @@ fs.readFile(input, (err, data) => {
         }
         wayIdsByLastNodeId[lastNodeId].push(way.id);
         
-        if ((way.tags.turn || (way.tags.lanes === "1")) && way.tags.highway.includes("_link")) {
+        if ((way.tags.turn || (way.tags.lanes === "1")) &&
+            (way.tags.oneway === "yes" || way.tags.oneway === "-1") &&
+            way.tags.highway.includes("_link")) {
             return;
         }
         
