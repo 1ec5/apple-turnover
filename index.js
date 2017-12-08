@@ -238,18 +238,18 @@ function flattenManeuver(maneuver) {
         console.warn("Maneuver drops %s lane(s) from %s to %s", maneuver.lanes - next.lanes, _.last(maneuver.fromWays), next.fromWays[0]);
     }
     
-    maneuver.fromWays = maneuver.fromWays.concat(next.fromWays);
-    maneuver.progressions = maneuver.progressions.concat(next.progressions);
-    maneuver.line = turf.lineString(turf.getCoords(maneuver.line).concat(turf.getCoords(next.line)));
-    maneuver.viaNode = next.viaNode;
-    maneuver.lanes = Math.max(maneuver.lanes, next.lanes);
-    
     let length = turf.length(maneuver.line, {
         units: "meters"
     });
     let nextLength = turf.length(next.line, {
         units: "meters"
     });
+    
+    maneuver.fromWays = maneuver.fromWays.concat(next.fromWays);
+    maneuver.progressions = maneuver.progressions.concat(next.progressions);
+    maneuver.line = turf.lineString(turf.getCoords(maneuver.line).concat(turf.getCoords(next.line)));
+    maneuver.viaNode = next.viaNode;
+    maneuver.lanes = Math.max(maneuver.lanes, next.lanes);
     
     if (!maneuver.protected && next.protected) {
         maneuver.protectionNode = next.fromNode;
