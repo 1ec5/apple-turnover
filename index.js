@@ -468,9 +468,9 @@ fs.readFile(input, (err, data) => {
             // Find the shorter angular distance between the two bearings.
             let bearingDelta = connectedBearing - bearing;
             if (bearingDelta > 180) {
-                bearingDelta -= 180;
+                bearingDelta -= 360;
             } else if (bearingDelta < -180) {
-                bearingDelta += 180;
+                bearingDelta += 360;
             }
             //if (Math.abs(bearingDelta) > 30) {
             //    console.warn("Removing", maneuver.fromWay, bearing, connectedManeuver.fromWay, connectedBearing, bearingDelta);
