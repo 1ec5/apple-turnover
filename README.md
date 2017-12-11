@@ -18,9 +18,8 @@ With Apple Turnover, you can gather statistics about the lengths of turn lanes b
 
 1. Clone this repository and run `npm install` to install this tool’s dependencies.
 1. Using [Overpass turbo](http://overpass-turbo.eu/), query for turn lanes in a specific region in which turn lanes have been mapped. Examples:
-   * [Greater Cincinnati and Northern Kentucky](http://overpass-turbo.eu/s/tvd)
-   * [San Francisco Bay Area](http://overpass-turbo.eu/s/tuF)
-   * [Santa Clara County, California](http://overpass-turbo.eu/s/tuD)
+   * [Greater Cincinnati and Northern Kentucky](http://overpass-turbo.eu/s/tFY)
+   * [Santa Clara County, California](http://overpass-turbo.eu/s/tJv)
 1. Click the Export button. Under the Data section, choose “raw data” and save the file to disk.
 1. Run the following command to analyze the exported file and output the results:
    ```bash
@@ -35,7 +34,8 @@ The output file is a tab-delimited file. Each line represents one maneuver, such
 * ID of the node at the beginning of the turn lane
 * ID of the node at the end of the turn lane, where the driver turns
 * `left`, `right`, or `reverse`, as indicated by lane markings or signage; combinations of maneuvers, such as `left;right`, result in separate maneuvers
-* The `highway` tag of the way at the end of the turn lane (but not the way onto which the driver turns)
+* The `highway` tag of the way at the end of the turn lane
+* The `highway` tag of the way onto which the driver turns (the cross street)
 * The number of lanes that may be used for this maneuver
 * The length (in meters) of the turn lane
 * The length (in meters) of the portion of the turn lane that is surrounded by lane change restrictions; left blank if the entire lane is subject to lane change restrictions

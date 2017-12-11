@@ -11,7 +11,28 @@ let process = require("process");
  * included in the turn angle calculation between two maneuvers that are
  * candidates for linking.
  */
-const maxLengthForTurnAngle = 36;
+const maxBearingDeltaRadius = 36;
+
+///**
+// * {Array<String>} Valid road classifications (highway=* tag values) ordered
+// * from most important to least important.
+// */
+//const roadClassifications = [
+//    "service",
+//    "living_street",
+//    "residential",
+//    "unclassified",
+//    "tertiary_link",
+//    "tertiary",
+//    "secondary_link",
+//    "secondary",
+//    "primary_link",
+//    "primary",
+//    "trunk_link",
+//    "trunk",
+//    "motorway_link",
+//    "motorway"
+//];
 
 /**
  * {Object<Object>} A table mapping OpenStreetMap way IDs to the corresponding
@@ -32,7 +53,7 @@ function getLaneCount(way, progression) {
     let laneCount = parseInt(way.tags["lanes:" + direction]);
     if (!laneCount) {
         laneCount = parseInt(way.tags.lanes);
-        if (way.tags.oneway !== "yes" && way.tags.oneway !== "-1") {
+        if (way.progressions.forward && way.progressions.backward) {
             laneCount = Math.floor(laneCount / 2);
         }
     }
@@ -112,7 +133,7 @@ function normalizeSpeed(speed) {
  *  negative number for the backward direction.
  * @returns {Array<Object>} Turn maneuvers allowed by the way.
  */
-function getManeuvers(way, progression) {
+function getManeuversFromWay(way, progression) {
     // Get turn lane indications.
     let laneCount = getLaneCount(way, progression);
     let turnTags = getTagsForProgression("turn", way, progression, laneCount);
@@ -145,8 +166,9 @@ function getManeuvers(way, progression) {
                 case "only_left":
                     return [true, false];
                 default:
-                    console.assert(false, "Way %s, #%s lane has unrecognized change tag %s",
-                                   way.id, idx + 1, tag);
+                    console.warn("Way %s, #%s lane has unrecognized change tag %s",
+                                 way.id, idx + 1, tag);
+                    return [true, true];
             }
         });
         
@@ -254,6 +276,54 @@ function getManeuvers(way, progression) {
 }
 
 /**
+ * Calculates an absolute bearing at the beginning or end of a line.
+ *
+ * @param line {LineString} A line representing a maneuver.
+ * @param progression {Number} A positive number for the forward direction or a
+ *  negative number for the backward direction.
+ * @param fromEnd {Boolean} True to measure the bearing at the end of the line;
+ *  false to measure from the beginning of the line.
+ * @returns {Number} The absolute bearing of one end of the line.
+ */
+function getBearing(line, progression, fromEnd) {
+    let length = turf.length(line, {
+        units: "meters"
+    });
+    let startOffset = 0;
+    let endOffset = Math.min(length, maxBearingDeltaRadius);
+    if (fromEnd) {
+        startOffset = length - endOffset;
+        endOffset = startOffset + endOffset;
+    }
+    if (progression < 0) {
+        [startOffset, endOffset] = [endOffset, startOffset];
+    }
+    return turf.bearing(turf.along(line, startOffset, {
+        units: "meters"
+    }), turf.along(line, endOffset, {
+        units: "meters"
+    }));
+}
+
+/**
+ * Returns the value wrapped within the given range (as opposed to being clamped
+ * to it).
+ */
+function wrap(value, min, max) {
+    let range = max - min;
+    let wrapped = ((value - min) % range + range) % range + min;
+    return wrapped === min ? max : wrapped;
+}
+
+/**
+ * Find the shorter angular distance between two bearings.
+ */
+function getBearingDelta(first, second) {
+    let bearingDelta = second - first;
+    return wrap(bearingDelta, -180, 180);
+}
+
+/**
  * Merges a maneuver with a connecting maneuver in chronological order.
  *
  * @param maneuver {Object} The maneuver to flatten. Its `next` property must be
@@ -348,47 +418,49 @@ fs.readFile(input, (err, data) => {
     let nodesById = _.fromPairs(nodes.map(node => [node.id, node]));
     
     // Convert individual ways into turn maneuvers.
-    let wayIdsByFirstNodeId = {};
-    let wayIdsByLastNodeId = {};
+    let wayIdsByNodeId = {};
     let maneuvers = [];
     ways.forEach(way => {
-        // Form a line string corresopnding to the way.
+        // Form a line string corresponding to the way.
         let nodes = way.nodes.map(id => nodesById[id]);
         let coords = nodes.map(node => [node.lon, node.lat]);
         way.line = turf.lineString(coords);
         
-        // Index the way by its first and last node IDs, making it easier to
-        // look up connections.
-        let firstNodeId = way.nodes[0];
-        if (!("firstNodeId" in wayIdsByFirstNodeId)) {
-            wayIdsByFirstNodeId[firstNodeId] = [];
-        }
-        wayIdsByFirstNodeId[firstNodeId].push(way.id);
-        let lastNodeId = _.last(way.nodes);
-        if (!("lastNodeId" in wayIdsByLastNodeId)) {
-            wayIdsByLastNodeId[lastNodeId] = [];
-        }
-        wayIdsByLastNodeId[lastNodeId].push(way.id);
+        // Index the way by the nodes it contains, making it easier to look up
+        // connections.
+        way.nodes.forEach(nodeId => {
+            if (!(nodeId in wayIdsByNodeId)) {
+                wayIdsByNodeId[nodeId] = [];
+            }
+            wayIdsByNodeId[nodeId].push(way.id);
+        });
         
-        // A one-lane, one-way link way is most likely a turn channel, which
-        // would occur past the maneuver itself.
-        if ((way.tags.turn || (way.tags.lanes === "1")) &&
-            (way.tags.oneway === "yes" || way.tags.oneway === "-1") &&
-            way.tags.highway.includes("_link")) {
+        way.progressions = {
+            forward: way.tags.oneway !== "-1",
+            backward: way.tags.oneway !== "yes"
+        };
+        
+        // A one-lane, one-way service or link way is most likely a turn
+        // channel, which would occur past the maneuver itself.
+        if ((way.tags.turn || (way.tags.lanes === "1") || (!way.tags.lanes)) &&
+            (!way.progressions.forward || !way.progressions.backward) &&
+            (way.tags.highway === "service" || way.tags.highway.includes("_link"))) {
             return;
         }
         
         // Add one set of maneuvers for each direction of travel along the way.
         let wayManeuvers = [];
-        if (!way.tags.oneway || way.tags.oneway === "yes") {
-            let forwardManeuvers = getManeuvers(way, 1);
+        if (way.progressions.forward) {
+            let forwardManeuvers = getManeuversFromWay(way, 1);
             wayManeuvers = wayManeuvers.concat(forwardManeuvers);
         }
-        if (!way.tags.oneway || way.tags.oneway === "-1") {
-            let backwardManeuvers = getManeuvers(way, -1);
+        if (way.progressions.backward) {
+            let backwardManeuvers = getManeuversFromWay(way, -1);
             wayManeuvers = wayManeuvers.concat(backwardManeuvers);
         }
-        maneuvers = maneuvers.concat(wayManeuvers);
+        if (wayManeuvers.length) {
+            maneuvers = maneuvers.concat(wayManeuvers);
+        }
     });
     
     // Link up maneuvers that traverse multiple ways.
@@ -419,68 +491,30 @@ fs.readFile(input, (err, data) => {
             return maneuver.protected && connectedManeuver.protected === false;
         });
         
-        // Calculate an absolute bearing at the end of the maneuver. The end
-        // coordinate differs based on the maneuver's progression along the way.
-        let wayLength = turf.length(way.line, {
-            units: "meters"
-        });
-        let startOffset;
-        let endOffset;
-        if (maneuver.progression > 0) {
-            startOffset = 0;
-            endOffset = Math.min(wayLength, maxLengthForTurnAngle);
-        } else {
-            startOffset = Math.min(wayLength, maxLengthForTurnAngle);
-            endOffset = 0;
-        }
-        let bearing = turf.bearing(turf.along(way.line, startOffset, {
-            units: "meters"
-        }), turf.along(way.line, endOffset, {
-            units: "meters"
-        }));
-        
         // Calculate a turn angle between the maneuver and each of the connected
         // maneuvers.
+        let bearing = getBearing(way.line, maneuver.progression, maneuver.progression > 0);
         let bearingDeltas = connectedManeuvers.map(connectedManeuver => {
             let connectedWay = waysById[connectedManeuver.fromWay];
-            
-            // Calculate an absolute bearing at the beginning of the connected
-            // maneuver. The starting coordinate differs based on the maneuver's
-            // progression along the way.
-            let startOffset;
-            let endOffset;
-            let connectedWayLength = turf.length(connectedWay.line, {
-                units: "meters"
-            });
-            if (connectedManeuver.progression > 0) {
-                startOffset = 0;
-                endOffset = Math.min(wayLength, connectedWayLength, maxLengthForTurnAngle);
-            } else {
-                startOffset = connectedWayLength;
-                endOffset = connectedWayLength - Math.min(wayLength, connectedWayLength, maxLengthForTurnAngle);
-            }
-            let connectedBearing = turf.bearing(turf.along(connectedWay.line, startOffset, {
-                units: "meters"
-            }), turf.along(connectedWay.line, endOffset, {
-                units: "meters"
-            }));
-            
-            // Find the shorter angular distance between the two bearings.
-            let bearingDelta = connectedBearing - bearing;
-            if (bearingDelta > 180) {
-                bearingDelta -= 360;
-            } else if (bearingDelta < -180) {
-                bearingDelta += 360;
-            }
-            //if (Math.abs(bearingDelta) > 30) {
-            //    console.warn("Removing", maneuver.fromWay, bearing, connectedManeuver.fromWay, connectedBearing, bearingDelta);
-            //}
-            return bearingDelta;
+            let connectedBearing = getBearing(connectedWay.line, connectedManeuver.progression,
+                                              connectedManeuver.progression < 0);
+            //console.log(maneuver.fromWay, bearing, connectedManeuver.fromWay, connectedBearing);
+            return getBearingDelta(bearing, connectedBearing);
         });
         
-        // Two maneuvers are not connected if they're over 30 degrees apart (in
+        //bearingDeltas.forEach((delta, idx) => {
+        //    if (Math.abs(delta) > 45) {
+        //        let connectedManeuver = connectedManeuvers[idx];
+        //        console.warn("Removing", maneuver.fromWay, bearing, connectedManeuver.fromWay, delta);
+        //    }
+        //});
+        
+        // Two maneuvers are not connected if they're over 45 degrees apart (in
         // which case the connected maneuver is probably on a cross street).
-        _.remove(connectedManeuvers, (connectedManeuver, idx) => Math.abs(bearingDeltas[idx]) > 30);
+        // (Most connections are 30 degrees or less apart, but a bigger
+        // difference may occur where a divided road begins at the
+        // intersection.)
+        _.remove(connectedManeuvers, (connectedManeuver, idx) => Math.abs(bearingDeltas[idx]) > 45);
         
         // The maneuver can only be merged with a single maneuver at the same
         // node. If multiple candidates remain, prefer one with the same road
@@ -538,6 +572,94 @@ fs.readFile(input, (err, data) => {
     maneuvers = maneuvers.filter(maneuver => !maneuver.isConnection);
     maneuvers.forEach(flattenManeuver);
     
+    // Find the cross street that each maneuver turns onto.
+    maneuvers.forEach(maneuver => {
+        let viaNodeId = maneuver.viaNode;
+        let viaNode = nodesById[viaNodeId];
+        let viaPoint = turf.point([viaNode.lon, viaNode.lat]);
+        
+        // Gather candidate cross streets based on intersecting nodes. Each
+        // candidate must have at least one node beyond the intersection.
+        let forwardCrossingWays = (wayIdsByNodeId[viaNodeId] || []).map(id => waysById[id])
+            .filter(way => way.progressions.forward && way.nodes.indexOf(viaNodeId) !== way.nodes.length - 1);
+        let backwardCrossingWays = (wayIdsByNodeId[viaNodeId] || []).map(id => waysById[id])
+            .filter(way => way.progressions.backward && way.nodes.indexOf(viaNodeId) !== 0);
+        
+        // Calculate a turn angle between the maneuver and each of the candidate
+        // crossing ways.
+        let bearing = getBearing(maneuver.line, 1 /* maneuver.line was reversed in getManeuversFromWay() */, true);
+        let forwardBearingDeltas = forwardCrossingWays.map(crossingWay => {
+            // Form a line string corresponding to the way past the intersection.
+            let endNode = nodesById[_.last(crossingWay.nodes)];
+            let endPoint = turf.point([endNode.lon, endNode.lat]);
+            let crossingLine = turf.lineSlice(viaPoint, endPoint, crossingWay.line);
+            
+            let crossingBearing = getBearing(crossingLine, 1, false);
+            return getBearingDelta(bearing, crossingBearing);
+        });
+        let backwardBearingDeltas = backwardCrossingWays.map(crossingWay => {
+            // Form a line string corresponding to the way up to the intersection.
+            let startNode = nodesById[crossingWay.nodes[0]];
+            let startPoint = turf.point([startNode.lon, startNode.lat]);
+            let crossingLine = turf.lineSlice(startPoint, viaPoint, crossingWay.line);
+            
+            let crossingBearing = getBearing(crossingLine, -1, true);
+            return getBearingDelta(bearing, crossingBearing);
+        });
+        
+        // Gather together candidates that travel on the forward and backward
+        // directions of the respective ways, along with their turn angles.
+        let crossingWays = forwardCrossingWays.concat(backwardCrossingWays);
+        let bearingDeltas = forwardBearingDeltas.concat(backwardBearingDeltas);
+        console.assert(crossingWays.length == bearingDeltas.length);
+        let crossingWaysWithDeltas = _.zip(crossingWays, bearingDeltas);
+        
+        // Find the candidate that has the most ideal (not slight, not sharp,
+        // not backwards) turn angle.
+        let crossingWay;
+        switch (maneuver.turn) {
+            case "reverse":
+                // The ideal U-turn angle is 180 degrees. However, on a divided
+                // road, a U-turn is effectively a left or right turn, depending
+                // which side of the road the region drives on.
+                crossingWay = _.maxBy(crossingWaysWithDeltas.filter(wayWithDelta => Math.abs(wayWithDelta[1]) > 30),
+                                      wayWithDelta => Math.abs(wayWithDelta[1]));
+                crossingWay = crossingWay && crossingWay[0];
+                break;
+            case "left":
+                // The ideal left turn angle is around -90 degrees. Express the
+                // turn angles relative to the ideal, the find the one that
+                // deviates the least. Exclude any obvious U-turns.
+                crossingWay = _.minBy(crossingWaysWithDeltas.filter(wayWithDelta => Math.abs(wayWithDelta[1]) < 150),
+                                      wayWithDelta => Math.abs(wrap(wayWithDelta[1] + 90, -180, 180)));
+                if (crossingWay && Math.abs(wrap(crossingWay[1] + 90, -180, 180)) > 90) {
+                    console.log("Unusually sharp left turn from way %s onto %s at %s",
+                                _.last(maneuver.fromWays), crossingWay[0].id, viaNodeId);
+                }
+                crossingWay = crossingWay && crossingWay[0];
+                break;
+            case "right":
+                // The ideal right turn angle is around +90 degrees. Express the
+                // turn angles relative to the ideal, the find the one that
+                // deviates the least. Exclude any obvious U-turns.
+                crossingWay = _.minBy(crossingWaysWithDeltas.filter(wayWithDelta => Math.abs(wayWithDelta[1]) < 150),
+                                      wayWithDelta => Math.abs(wrap(wayWithDelta[1] - 90, -180, 180)));
+                if (crossingWay && Math.abs(wrap(crossingWay[1] - 90, -180, 180)) > 90) {
+                    console.log("Unusually sharp right turn from way %s onto %s at %s",
+                                _.last(maneuver.fromWays), crossingWay[0].id, viaNodeId);
+                }
+                crossingWay = crossingWay && crossingWay[0];
+                break;
+        }
+        
+        if (crossingWay) {
+            maneuver.toWay = crossingWay.id;
+        } else {
+            console.warn("Way %s has no road to turn %s onto at %s",
+                         _.last(maneuver.fromWays), maneuver.turn, viaNodeId);
+        }
+    });
+    
     // Output a tab-delimited representation of each maneuver.
     let writer = output && fs.createWriteStream(output);
     maneuvers.forEach(maneuver => {
@@ -560,8 +682,11 @@ fs.readFile(input, (err, data) => {
             });
         }
         
+        let toWay = waysById[maneuver.toWay];
+        let toClass = toWay && toWay.tags.highway;
+        
         // Output to a file if specified or to standard output otherwise.
-        let entry = `${maneuver.fromNode}\t${maneuver.viaNode}\t${maneuver.turn}\t${lastWay.tags.highway}\t${maneuver.lanes}\t${length}\t${protectedLength || ""}\t${maneuver.maxSpeed || ""}`;
+        let entry = `${maneuver.fromNode}\t${maneuver.viaNode}\t${maneuver.turn}\t${lastWay.tags.highway}\t${toClass || ""}\t${maneuver.lanes}\t${length}\t${protectedLength || ""}\t${maneuver.maxSpeed || ""}`;
         if (writer) {
             writer.write(entry + "\n");
         } else {
