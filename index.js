@@ -196,9 +196,9 @@ function getManeuversFromWay(way, progression) {
     let turns = {
         none: lanes.filter(lane => !lane.turn.length || lane.turn[0] === "none"),
         reverse: lanes.filter(lane => lane.turn.includes("reverse")),
-        left: lanes.filter(lane => lane.turn.includes("left") || lane.turn.includes("slight_left")),
-        through: lanes.filter(lane => lane.turn.includes("through")),
-        right: lanes.filter(lane => lane.turn.includes("right") || lane.turn.includes("slight_right"))
+        left: lanes.filter((lane, idx) => lane.turn.includes("left") || lane.turn.includes("slight_left") || ((!lane.turn.length || lane.turn[0] === "none") && idx === 0)),
+        through: lanes.filter((lane, idx) => lane.turn.includes("through") || ((!lane.turn.length || lane.turn[0] === "none") && idx !== 0 && idx !== lanes.length - 1)),
+        right: lanes.filter((lane, idx) => lane.turn.includes("right") || lane.turn.includes("slight_right") || ((!lane.turn.length || lane.turn[0] === "none") && idx === lanes.length - 1))
     };
     
     /**
@@ -617,6 +617,7 @@ fs.readFile(input, (err, data) => {
         // Find the candidate that has the most ideal (not slight, not sharp,
         // not backwards) turn angle.
         let crossingWay;
+        let crossingBearing;
         switch (maneuver.turn) {
             case "reverse":
                 // The ideal U-turn angle is 180 degrees. However, on a divided
@@ -624,6 +625,7 @@ fs.readFile(input, (err, data) => {
                 // which side of the road the region drives on.
                 crossingWay = _.maxBy(crossingWaysWithDeltas.filter(wayWithDelta => Math.abs(wayWithDelta[1]) > 30),
                                       wayWithDelta => Math.abs(wayWithDelta[1]));
+                crossingBearing = crossingWay && Math.abs(crossingWay[1]);
                 crossingWay = crossingWay && crossingWay[0];
                 break;
             case "left":
@@ -636,6 +638,7 @@ fs.readFile(input, (err, data) => {
                     console.log("Unusually sharp left turn from way %s onto %s at %s",
                                 _.last(maneuver.fromWays), crossingWay[0].id, viaNodeId);
                 }
+                crossingBearing = crossingWay && Math.abs(wrap(crossingWay[1] + 90, -180, 180));
                 crossingWay = crossingWay && crossingWay[0];
                 break;
             case "right":
@@ -648,12 +651,14 @@ fs.readFile(input, (err, data) => {
                     console.log("Unusually sharp right turn from way %s onto %s at %s",
                                 _.last(maneuver.fromWays), crossingWay[0].id, viaNodeId);
                 }
+                crossingBearing = crossingWay && Math.abs(wrap(crossingWay[1] - 90, -180, 180));
                 crossingWay = crossingWay && crossingWay[0];
                 break;
         }
         
         if (crossingWay) {
             maneuver.toWay = crossingWay.id;
+            maneuver.toBearing = crossingBearing;
         } else {
             console.warn("Way %s has no road to turn %s onto at %s",
                          _.last(maneuver.fromWays), maneuver.turn, viaNodeId);
@@ -662,6 +667,8 @@ fs.readFile(input, (err, data) => {
     
     // Output a tab-delimited representation of each maneuver.
     let writer = output && fs.createWriteStream(output);
+    let implicits = 0;
+    let goodImplicits = 0;
     maneuvers.forEach(maneuver => {
         let lastWay = waysById[_.last(maneuver.fromWays)];
         let length = turf.length(maneuver.line, {
@@ -692,8 +699,19 @@ fs.readFile(input, (err, data) => {
         } else {
             console.log(entry);
         }
+        let turn = getTagsForProgression("turn", lastWay, maneuver.progression, getLaneCount(lastWay, _.last(maneuver.progressions)));
+        if (turn && turn.match(/^\||\|$|\|\||none/g)) {
+            //console.log(entry);
+            //console.log("\t", turn, maneuver.toBearing);
+            implicits++;
+            if (Math.abs(maneuver.toBearing) < 30) {
+                goodImplicits++;
+            }
+        }
     });
     if (writer) {
         writer.end();
     }
+    console.log(implicits / maneuvers.length * 100 + "% of tagged turn maneuvers are on ways that contain 'none' turn lanes.");
+    console.log(goodImplicits / implicits * 100 + "% of those can be detected easily.");
 });
